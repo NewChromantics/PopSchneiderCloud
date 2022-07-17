@@ -25,6 +25,7 @@ const ColourFilename = 'Moon_Colour_2048x1024.jpg';
 const HeightmapFilename = 'Moon_Depth_2048x1024.jpg';
 
 const BlueNoiseFilename = 'BlueNoise.png';
+const PerlinWorleyFilename = 'PerlinWorley.png';
 
 
 
@@ -91,6 +92,8 @@ let RaymarchShader;
 let MoonColourTexture = Pop.CreateColourTexture([0.1,0.8,0.8,1]);
 let MoonDepthTexture = Pop.CreateColourTexture([0,0,0,1]);
 let BlueNoiseTexture = null;//Pop.CreateColourTexture([0,0,0,1]);
+let PerlinWorleyTexture = null;
+
 
 async function LoadAssets(RenderContext)
 {
@@ -124,6 +127,13 @@ async function LoadAssets(RenderContext)
 		BlueNoiseTexture = await LoadFileAsImageAsync(BlueNoiseFilename);
 		BlueNoiseTexture.SetLinearFilter(true);
 	}
+	
+	if ( !PerlinWorleyTexture )
+	{
+		PerlinWorleyTexture = await LoadFileAsImageAsync(PerlinWorleyFilename);
+		PerlinWorleyTexture.SetLinearFilter(true);
+	}
+	
 }
 
 function GetRenderCommands(Camera,ScreenRect)
@@ -164,6 +174,8 @@ function GetRenderCommands(Camera,ScreenRect)
 	Uniforms.HeightmapTexture = Heightmap;
 	Uniforms.ColourTexture = Colour;
 	Uniforms.BlueNoiseTexture = BlueNoiseTexture;
+	Uniforms.PerlinWorleyTexture = PerlinWorleyTexture;
+	Uniforms.iTime = (Pop.GetTimeNowMs() / 1000.0);
 
 	const Draw = ['Draw',Quad,Shader,Uniforms];
 	Commands.push(Draw);

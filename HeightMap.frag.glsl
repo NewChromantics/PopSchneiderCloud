@@ -6,8 +6,9 @@ uniform mat4 CameraToWorldTransform;
 
 uniform bool SquareStep;
 uniform vec3 BackgroundColour;
-#define MAX_STEPS	180
+#define MAX_STEPS	380
 #define FAR_Z		1000.0
+#define STEPS_LIGHT	10
 
 uniform float SunPositionX;
 uniform float SunPositionY;
@@ -15,17 +16,18 @@ uniform float SunPositionZ;
 const float SunRadius = 0.1;
 #define SunPosition	vec3(SunPositionX,SunPositionY,SunPositionZ)
 #define SunSphere	vec4(SunPosition,SunRadius)
-const vec4 SunColour = vec4(1,1,0.3,1);
+const vec4 SunColour = vec4(1,0.9,0.3,1);
 
 uniform float MoonPositionX;
 uniform float MoonPositionY;
 uniform float MoonPositionZ;
 uniform float MoonRadius;
 #define MoonSphere	vec4(MoonPositionX,MoonPositionY,MoonPositionZ,MoonRadius)
-const vec4 MoonColour = vec4(0.9,0.9,0.9,1.0);
+const vec4 MoonColour = vec4(0.1,0.1,0.9,1.0);
 
 
 uniform sampler2D BlueNoiseTexture;
+uniform sampler2D PerlinWorleyTexture;
 const float goldenRatio = 1.61803398875;
 uniform bool ApplyBlueNoiseOffset;
 
@@ -106,10 +108,10 @@ bool InsideCloudBounds(vec3 Position)
 {
 	return true;
 }
-#define CLOUD_EXTENT 1.0
+#define CLOUD_EXTENT 100.0
 const float cloudStart = 0.0;
 const float cloudEnd = CLOUD_EXTENT;
-const float iTime = 0.0;
+uniform float iTime;
 #ifdef COLOUR_SCATTERING
 const vec3 sigmaS = vec3(0.5, 1.0, 1.0);
 #else
@@ -123,8 +125,8 @@ const vec3 sigmaE = max(sigmaS + sigmaA, vec3(1e-6));
 const float power = 200.0;
 const float densityMultiplier = 0.5;
 
-const float shapeSize = 0.4;
-const float detailSize = 0.8;
+const float shapeSize = (CLOUD_EXTENT/100.0)*0.4;
+const float detailSize = (CLOUD_EXTENT/100.0)*0.8;
 
 const float shapeStrength = 0.6;
 const float detailStrength = 0.35;
@@ -161,7 +163,9 @@ float circularOut(float t)
 
 float getPerlinWorleyNoise(vec3 pos)
 {
-	/*
+	//vec2 PerlinWorleyTextureSize = textureSize(PerlinWorleyTexture);
+	vec2 PerlinWorleyTextureSize = vec2(640,360);
+
 	// The cloud shape texture is an atlas of 6*6 tiles (36).
 	// Each tile is 32*32 with a 1 pixel wide boundary.
 	// Per tile:		32 + 2 = 34.
@@ -189,10 +193,10 @@ float getPerlinWorleyNoise(vec3 pos)
 	// between each tile pair and the initial boundary cell on the first row/column.
 	vec2 offset = atlasDimensions.x * vec2(tileX, tileY) + 2.0 * vec2(tileX, tileY) + 1.0;
 	vec2 pixel = coord.xy + offset;
-	vec2 data = texture(iChannel0, mod(pixel, dataWidth)/iChannelResolution[0].xy).xy;
+	vec2 uv = mod(pixel, dataWidth)/PerlinWorleyTextureSize.xy;
+	uv.y = 1.0-uv.y;
+	vec2 data = texture2D(PerlinWorleyTexture, uv).xy;
 	return mix(data.x, data.y, f);
-	 */
-	return 0.3;
 }
 
 float getCloudMap(vec3 p)
@@ -224,6 +228,9 @@ float GetCloudDensity(vec3 p, out float cloudHeight, bool sampleNoise)
 	if(!InsideCloudBounds(p))
 		return 0.0;
 
+	//	everything in here is original source-scale
+	p *= 100.0;
+	
 	
 	cloudHeight = saturate((p.y - cloudStart)/(cloudEnd-cloudStart));
 	float cloud = getCloudMap(p);
@@ -250,8 +257,11 @@ float GetCloudDensity(vec3 p, out float cloudHeight, bool sampleNoise)
 	// Carve away density from cloud based on noise.
 	cloud = saturate(remap(cloud, shapeStrength * (shape), 1.0, 0.0, 1.0));
 
+	return cloud;
+	
 	// Early exit from empty space
-	if(cloud <= 0.0){
+	if(cloud <= 0.0)
+	{
 	  return 0.0;
 	}
 	
@@ -269,12 +279,11 @@ float GetCloudDensity(vec3 p, out float cloudHeight, bool sampleNoise)
 // Get the amount of light that reaches a sample point.
 vec3 lightRay(vec3 org, vec3 p, float phaseFunction, float mu, vec3 sunDirection)
 {
-	return vec3(0.5);
-/*
 	float lightRayDistance = CLOUD_EXTENT*0.75;
 	float distToStart = 0.0;
 	
-	getCloudIntersection(p, sunDirection, distToStart, lightRayDistance);
+	//	this func is to get ray entry & exit for bounds
+	//getCloudIntersection(p, sunDirection, distToStart, lightRayDistance);
 		
 	float stepL = lightRayDistance/float(STEPS_LIGHT);
 
@@ -283,17 +292,20 @@ vec3 lightRay(vec3 org, vec3 p, float phaseFunction, float mu, vec3 sunDirection
 	float cloudHeight = 0.0;
 
 	// Collect total density along light ray.
-	for(int j = 0; j < STEPS_LIGHT; j++){
+	for(int j = 0; j < STEPS_LIGHT; j++)
+	{
 	
 		bool sampleDetail = true;
 		if(lightRayDensity > 0.3){
 			sampleDetail = false;
 		}
 		
-		lightRayDensity += clouds(p + sunDirection * float(j) * stepL,
-								  cloudHeight, sampleDetail);
+		lightRayDensity += GetCloudDensity(p, cloudHeight, true);
+		//lightRayDensity += clouds(p + sunDirection * float(j) * stepL, cloudHeight, sampleDetail);
 	}
 	
+	return vec3(lightRayDensity);
+	/*
 	vec3 beersLaw = multipleOctaves(lightRayDensity, mu, stepL);
 	
 	// Return product of Beer's law and powder effect depending on the
@@ -303,6 +315,7 @@ vec3 lightRay(vec3 org, vec3 p, float phaseFunction, float mu, vec3 sunDirection
 			   0.5 + 0.5 * mu);
  */
 }
+
 
 void GetDistanceToClouds(vec3 RayPosition,vec3 RayDirection,inout float Distance,inout vec4 Colour)
 {
@@ -316,9 +329,13 @@ void GetDistanceToClouds(vec3 RayPosition,vec3 RayDirection,inout float Distance
 	// Get density and cloud height at sample point
 	float density = GetCloudDensity(RayPosition, cloudHeight, true);
 	
-	vec3 sunDirection = RayPosition - SunSphere.xyz;
+	vec3 sunDirection = SunSphere.xyz - RayPosition;
 	float mu = dot(RayDirection, sunDirection);
-	vec3 org = RayPosition;	//	eye origin?
+
+	vec3 EyePos,EyeDir;
+	GetWorldRay(EyePos,EyeDir);
+	vec3 org = EyePos;	//	eye origin?
+
 	
 	// Combine backward and forward scattering to have details in all directions.
 	float phaseFunction = mix(HenyeyGreenstein(-0.3, mu), HenyeyGreenstein(0.3, mu), 0.7);
@@ -335,18 +352,23 @@ void GetDistanceToClouds(vec3 RayPosition,vec3 RayDirection,inout float Distance
 	}
 	
 	//	already inside some solid object
+	//	todo: handle non solids too
 	if ( Distance <= 0.0 )
 		return;
 
 	
 	//	inside cloud, so specify distance as zero
 	Distance = 0.0;
-	Colour = vec4(1,0,0,density);
-	Colour = vec4(1,0,0,0.5);
+	Colour = vec4(0,0,0,density);
+	//Colour = vec4(1,0,0,0.5);
+	
+	//	dont light cloud
 	return;
 	
 	//Constant lighting factor based on the height of the sample point.
-	vec3 ambient = SunColour.xyz * mix((0.2), (0.8), cloudHeight);
+	//vec3 ambient = SunColour.xyz * mix((0.2), (0.8), cloudHeight);
+	vec3 ambient = SunColour.xyz;
+	//vec3 ambient = vec3(0);	//	gr: no ambient colour for now
 
 	// Amount of sunlight that reaches the sample point through the cloud
 	// is the combination of ambient light and attenuated direct light.
@@ -368,7 +390,9 @@ void GetDistanceToClouds(vec3 RayPosition,vec3 RayDirection,inout float Distance
 	vec3 colour = vec3(0);
 
 	colour += totalTransmittance * (luminance - luminance * transmittance) / sampleSigmaE;
+	colour = min( vec3(1.0), colour );
 	Colour.xyz = colour;
+	
 
 	// Attenuate the amount of light that reaches the camera.
 	totalTransmittance *= transmittance;
@@ -397,7 +421,7 @@ uniform float DistancePerOpacityk;
 //	also get position for shadowing
 //	todo: get a bouncing ray for built in refraction
 //	todo: get a normal
-void GetSceneColour(TRay Ray,out vec4 RayMarchColour,out vec4 RayMarchPosition)
+void GetSceneColour(TRay Ray,out vec4 RayMarchColour,out vec4 RayMarchPosition,vec3 BackgroundColour)
 {
 	const float MinDistance = 0.001;
 	const float CloseEnough = MinDistance;
@@ -425,7 +449,7 @@ void GetSceneColour(TRay Ray,out vec4 RayMarchColour,out vec4 RayMarchPosition)
 	
 	
 	RayTime += RayOffset;
-	vec4 RayColour = vec4(0,0,0,0);
+	vec4 RayColour = vec4(BackgroundColour,0);
 	
 	//	inverse opacity, how much light gets through (demo +=bg*transmit)
 	vec3 TotalTransmittance = vec3(1.0);
@@ -513,12 +537,14 @@ void main()
 	TRay Ray;
 	GetWorldRay(Ray.Pos,Ray.Dir);
 	vec4 Colour = vec4(BackgroundColour,0.0);
+	Colour = vec4(0.2,0.9,0.4,0);
+	//Colour = vec4(0);
 
 	vec4 SceneColour;
 	vec4 ScenePosition;
-	GetSceneColour( Ray, SceneColour, ScenePosition );
+	GetSceneColour( Ray, SceneColour, ScenePosition, vec3(0) );
 
-	//	miss
+	//	miss gr: this include inside cloud
 	/*
 	if ( ScenePosition.w < 1.0 )
 	{
@@ -527,8 +553,10 @@ void main()
 	}
 	*/
 	Colour = mix( Colour, SceneColour, max(0.0,SceneColour.w) );
+	//Colour.xyz += SceneColour.xyz * SceneColour.www;
 	Colour.w = 1.0;
 	gl_FragColor = Colour;
 	gl_FragColor.w = 1.0;
+
 }
 
