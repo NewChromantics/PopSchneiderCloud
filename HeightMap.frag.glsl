@@ -20,6 +20,12 @@ const vec4 SunColour = vec4(1,1,0.3,1);
 uniform vec4 MoonSphere;// = vec4(0,0,-3,1.0);
 const vec4 MoonColour = vec4(0.9,0.9,0.9,1.0);
 
+
+uniform sampler2D BlueNoiseTexture;
+const float goldenRatio = 1.61803398875;
+uniform bool ApplyBlueNoiseOffset;
+
+
 struct TRay
 {
 	vec3 Pos;
@@ -122,6 +128,7 @@ const float detailStrength = 0.35;
 uniform float FixedStepDistance;
 //#define FIXED_STEP_DISTANCE 0.010
 #define FIXED_STEP_DISTANCE (FixedStepDistance/10000.0)
+
 
 float HenyeyGreenstein(float g, float costh){
 	return (1.0 / (4.0 * 3.1415))  * ((1.0 - g * g) / pow(1.0 + g*g - 2.0*g*costh, 1.5));
@@ -305,7 +312,7 @@ void GetDistanceToClouds(vec3 RayPosition,vec3 RayDirection,inout float Distance
 	// Get density and cloud height at sample point
 	float density = GetCloudDensity(RayPosition, cloudHeight, true);
 	
-	vec3 sunDirection = SunSphere.xyz - RayPosition;
+	vec3 sunDirection = RayPosition - SunSphere.xyz;
 	float mu = dot(RayDirection, sunDirection);
 	vec3 org = RayPosition;	//	eye origin?
 	
@@ -328,9 +335,10 @@ void GetDistanceToClouds(vec3 RayPosition,vec3 RayDirection,inout float Distance
 		return;
 
 	
-	//	inside cloud
+	//	inside cloud, so specify distance as zero
 	Distance = 0.0;
-	Colour = vec4(1,0,0,density);
+	//Colour = vec4(1,0,0,density);
+	Colour = vec4(1,0,0,0.1);
 	return;
 	
 	//Constant lighting factor based on the height of the sample point.
@@ -366,7 +374,8 @@ void GetDistanceToClouds(vec3 RayPosition,vec3 RayDirection,inout float Distance
 	if(length(totalTransmittance) <= 0.001)
 		totalTransmittance = vec3(0.0);
 
-	Colour.w = 1.0 - totalTransmittance.x;
+	//Colour.w = 1.0 - totalTransmittance.x;
+	Colour.w = totalTransmittance.x;
 }
 
 void DistanceToScene(vec3 RayPosition,vec3 RayDirection,inout float Distance,inout vec4 Colour)
@@ -375,6 +384,10 @@ void DistanceToScene(vec3 RayPosition,vec3 RayDirection,inout float Distance,ino
 	GetDistanceToSphere( RayPosition, MoonSphere, MoonColour, Distance, Colour );
 	GetDistanceToClouds( RayPosition, RayDirection, Distance, Colour );
 }
+
+uniform float DistancePerOpacityk;
+#define DistancePerOpacity	(DistancePerOpacityk/1000.0)
+//float DistancePerOpacity = 0.05;
 
 //	march scene and get colour
 //	also get position for shadowing
@@ -389,7 +402,19 @@ void GetSceneColour(TRay Ray,out vec4 RayMarchColour,out vec4 RayMarchPosition)
 	const float MaxDistance = FAR_Z;
 	const int MaxSteps = MAX_STEPS;
 
-	float RayTime = 0.0;
+	//	add noise to the ray start (this is needed whilst fixed stepping)
+	//	so maybe it needs to be only when entering an alpha area
+	float blueNoise = texture2D(BlueNoiseTexture,fract(uv*1.0)).x;
+	// Blue noise texture is blue in space but animating it leads to white noise in time.
+	// Adding golden ratio to a number yields a low discrepancy sequence (apparently),
+	// making the offset of each pixel more blue in time (use fract() for modulo 1).
+	// https://blog.demofox.org/2017/10/31/animating-noise-for-integration-over-time/
+	//float RayOffset = fract(blueNoise + float(iFrame%32) * goldenRatio);
+	float RayOffset = fract(blueNoise + 0.0 * goldenRatio);
+	if ( !ApplyBlueNoiseOffset )
+		RayOffset = 0.0;
+
+	float RayTime = 0.0 + RayOffset;
 	vec4 RayColour = vec4(0,0,0,0);
 	
 	//	inverse opacity, how much light gets through (demo +=bg*transmit)
@@ -419,14 +444,23 @@ void GetSceneColour(TRay Ray,out vec4 RayMarchColour,out vec4 RayMarchPosition)
 		{
 			//	gr: we should scale the opacity with the distance we just stepped
 			//		only if we were in the same object before?
-			float AdditionalOpacity = min( 1.0, (1.0-RayColour.w) * SceneColour.w );
+			//	^^ for tweaking, we want opacity at a fixed step amount (eg. density/metre)
+			//	so scale based on some unit
+			//float DistancePerOpacity = 1.0;	//	1 metre is hard to tweak!
+			//float DistancePerOpacity = 0.05;	//	1 metre is hard to tweak!
+			float OpacityPerMetre = SceneColour.w;
+			OpacityPerMetre *= FixedStepDistance / DistancePerOpacity;
+			float SceneOpacityPerMetre = OpacityPerMetre * SceneColour.w;
+			
+			float AdditionalOpacity = min( 1.0, (1.0-RayColour.w) * SceneOpacityPerMetre);
 			RayColour.xyz += SceneColour.xyz * AdditionalOpacity;
 			RayColour.w += AdditionalOpacity;
 			RayColour.w = min( 1.0, RayColour.w );
 
 			//	if not opaque, move a fixed step through whatever object we hit
-			if ( SceneColour.w < 1.0 )
-				RayTime += FixedStepDistance;
+			if ( SceneOpacityPerMetre < 1.0 )
+			//if ( SceneColour.w < 1.0 )
+				RayTime += FixedStepDistance;// * (1.0-SceneColour.w);
 		}
 		
 		if ( SceneDistance < CloseEnough )

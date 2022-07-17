@@ -24,6 +24,7 @@ const ColourFilename = 'Moon_Colour_2048x1024.jpg';
 //const HeightmapFilename = 'Moon_Depth_1024x512.jpg';
 const HeightmapFilename = 'Moon_Depth_2048x1024.jpg';
 
+const BlueNoiseFilename = 'BlueNoise.png';
 
 
 
@@ -83,58 +84,13 @@ Pop.CreateColourTexture = function(Colour4)
 }
 
 	
-function Render(RenderTarget,Camera)
-{
-	const RenderContext = RenderTarget.GetRenderContext();
-
-
-	let ProjectionViewport = RenderTarget.GetRenderTargetRect();
-	ProjectionViewport[0] = 0;
-	ProjectionViewport[1] = 0; 
-	const Quad = GetAsset('Quad',RenderContext);
-	const Shader = GetAsset(RenderHeightmapShader,RenderContext);
-	const WorldToCameraMatrix = Camera.GetWorldToCameraMatrix();
-	const CameraProjectionMatrix = Camera.GetProjectionMatrix( ProjectionViewport );
-	const ScreenToCameraTransform = Math.MatrixInverse4x4( CameraProjectionMatrix );
-	const CameraToWorldTransform = Math.MatrixInverse4x4( WorldToCameraMatrix );
-	const LocalToWorldTransform = Camera.GetLocalToWorldFrustumTransformMatrix();
-	//const LocalToWorldTransform = Math.CreateIdentityMatrix();
-	const WorldToLocalTransform = Math.MatrixInverse4x4(LocalToWorldTransform);
-	//Pop.Debug("Camera frustum LocalToWorldTransform",LocalToWorldTransform);
-	//Pop.Debug("Camera frustum WorldToLocalTransform",WorldToLocalTransform);
-	
-	//	these should be GetAsset
-	const Colour = MoonColourTexture;
-	const Heightmap = MoonDepthTexture;
-	
-	
-	const SetUniforms = function(Shader)
-	{
-		Shader.SetUniform('VertexRect',[0,0,1,1]);
-		Shader.SetUniform('ScreenToCameraTransform',ScreenToCameraTransform);
-		Shader.SetUniform('CameraToWorldTransform',CameraToWorldTransform);
-		Shader.SetUniform('LocalToWorldTransform',LocalToWorldTransform);
-		Shader.SetUniform('WorldToLocalTransform',WorldToLocalTransform);
-		Shader.SetUniform('HeightmapTexture',Heightmap);
-		Shader.SetUniform('ColourTexture',Colour);
-		
-		function SetUniform(Key)
-		{
-			Shader.SetUniform( Key, Params[Key] );
-		}
-		Object.keys(Params).forEach(SetUniform);
-	}
-	RenderTarget.SetBlendModeAlpha();
-	RenderTarget.DrawGeometry( Quad, Shader, SetUniforms );
-
-}
 
 
 let QuadGeometry;
 let RaymarchShader;
 let MoonColourTexture = Pop.CreateColourTexture([0.1,0.8,0.8,1]);
 let MoonDepthTexture = Pop.CreateColourTexture([0,0,0,1]);
-
+let BlueNoiseTexture = null;//Pop.CreateColourTexture([0,0,0,1]);
 
 async function LoadAssets(RenderContext)
 {
@@ -163,6 +119,11 @@ async function LoadAssets(RenderContext)
 		MoonDepthTexture.SetLinearFilter(true);
 	}
 	 */
+	if ( !BlueNoiseTexture )
+	{
+		BlueNoiseTexture = await LoadFileAsImageAsync(BlueNoiseFilename);
+		BlueNoiseTexture.SetLinearFilter(true);
+	}
 }
 
 function GetRenderCommands(Camera,ScreenRect)
@@ -202,6 +163,7 @@ function GetRenderCommands(Camera,ScreenRect)
 	Uniforms.WorldToLocalTransform = WorldToLocalTransform;
 	Uniforms.HeightmapTexture = Heightmap;
 	Uniforms.ColourTexture = Colour;
+	Uniforms.BlueNoiseTexture = BlueNoiseTexture;
 
 	const Draw = ['Draw',Quad,Shader,Uniforms];
 	Commands.push(Draw);
