@@ -217,7 +217,7 @@ function InitCameraControls(Gui,Camera)
 		//if ( Button == 0 )
 		//	this.Camera.OnCameraPan( x, 0, y, FirstDown );
 		if ( Button == 'Left' )
-			Camera.OnCameraPanLocal( -x, y, 0, FirstDown );
+			Camera.OnCameraOrbit( -x, y, 0, FirstDown );
 		if ( Button == 'Right' )
 			Camera.OnCameraPanLocal( x, y, 0, FirstDown );
 		if ( Button == 'Middle' )
@@ -251,7 +251,7 @@ async function ScreenRenderLoop()
 	let RenderContext = new Pop.Opengl.Context(RenderView);
 	let Camera = new Camera_t();
 	Camera.LookAt = Params.MoonSphere.slice();
-	Camera.Position = [0,1.6, Params.MoonSphere[2]+Params.MoonSphere[3]*3 ];
+	Camera.Position = [0,1.8, Params.MoonSphere[2]+Params.MoonSphere[3]*6 ];
 
 	InitCameraControls(RenderView,Camera);
 
