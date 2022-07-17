@@ -17,7 +17,11 @@ const float SunRadius = 0.1;
 #define SunSphere	vec4(SunPosition,SunRadius)
 const vec4 SunColour = vec4(1,1,0.3,1);
 
-uniform vec4 MoonSphere;// = vec4(0,0,-3,1.0);
+uniform float MoonPositionX;
+uniform float MoonPositionY;
+uniform float MoonPositionZ;
+uniform float MoonRadius;
+#define MoonSphere	vec4(MoonPositionX,MoonPositionY,MoonPositionZ,MoonRadius)
 const vec4 MoonColour = vec4(0.9,0.9,0.9,1.0);
 
 
@@ -319,8 +323,8 @@ void GetDistanceToClouds(vec3 RayPosition,vec3 RayDirection,inout float Distance
 	// Combine backward and forward scattering to have details in all directions.
 	float phaseFunction = mix(HenyeyGreenstein(-0.3, mu), HenyeyGreenstein(0.3, mu), 0.7);
 	float stepS = FIXED_STEP_DISTANCE;
-	   vec3 sampleSigmaS = sigmaS * density;
-	   vec3 sampleSigmaE = sigmaE * density;
+	vec3 sampleSigmaS = sigmaS * density;
+	vec3 sampleSigmaE = sigmaE * density;
 
 	//	no cloud here, just ignore?
 	if(density <= 0.0 )
@@ -337,8 +341,8 @@ void GetDistanceToClouds(vec3 RayPosition,vec3 RayDirection,inout float Distance
 	
 	//	inside cloud, so specify distance as zero
 	Distance = 0.0;
-	//Colour = vec4(1,0,0,density);
-	Colour = vec4(1,0,0,0.1);
+	Colour = vec4(1,0,0,density);
+	Colour = vec4(1,0,0,0.5);
 	return;
 	
 	//Constant lighting factor based on the height of the sample point.
@@ -414,7 +418,13 @@ void GetSceneColour(TRay Ray,out vec4 RayMarchColour,out vec4 RayMarchPosition)
 	if ( !ApplyBlueNoiseOffset )
 		RayOffset = 0.0;
 
-	float RayTime = 0.0 + RayOffset;
+	//	get an initial offset to jump start render
+	float RayTime = 0.0;
+	vec4 DummyColour;
+	DistanceToScene( Ray.Pos, Ray.Dir, RayTime, DummyColour );
+	
+	
+	RayTime += RayOffset;
 	vec4 RayColour = vec4(0,0,0,0);
 	
 	//	inverse opacity, how much light gets through (demo +=bg*transmit)
@@ -429,7 +439,8 @@ void GetSceneColour(TRay Ray,out vec4 RayMarchColour,out vec4 RayMarchPosition)
 		DistanceToScene( Position, Ray.Dir, SceneDistance, SceneColour );
 		
 		//RayTime += max( SceneDistance, MinStep );
-		RayTime += SceneDistance;
+		//RayTime += SceneDistance;
+		RayTime+=FixedStepDistance;
 
 		//	ray gone too far
 		if (RayTime > MaxDistance)
@@ -459,8 +470,10 @@ void GetSceneColour(TRay Ray,out vec4 RayMarchColour,out vec4 RayMarchPosition)
 
 			//	if not opaque, move a fixed step through whatever object we hit
 			if ( SceneOpacityPerMetre < 1.0 )
+			{
 			//if ( SceneColour.w < 1.0 )
-				RayTime += FixedStepDistance;// * (1.0-SceneColour.w);
+				//RayTime += FixedStepDistance;// * (1.0-SceneColour.w);
+			}
 		}
 		
 		if ( SceneDistance < CloseEnough )
@@ -500,7 +513,6 @@ void main()
 	TRay Ray;
 	GetWorldRay(Ray.Pos,Ray.Dir);
 	vec4 Colour = vec4(BackgroundColour,0.0);
-	Colour = vec4(0,0,1,0);
 
 	vec4 SceneColour;
 	vec4 ScenePosition;
