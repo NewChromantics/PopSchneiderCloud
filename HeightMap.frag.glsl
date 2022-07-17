@@ -37,7 +37,7 @@ vec3 ScreenToWorld(vec2 uv,float z)
 	
 	return WorldPos;
 }
-/*
+
 void GetWorldRay(out vec3 RayPos,out vec3 RayDir)
 {
 	float Near = 0.01;
@@ -52,26 +52,6 @@ void GetWorldRay(out vec3 RayPos,out vec3 RayDir)
 	RayPos = CameraWorldPos3;
 	RayDir = WorldPosition - RayPos;
 	RayDir = normalize(RayDir);
-}
-*/
-
-//	gr: returning a TRay, or using TRay as an out causes a very low-precision result...
-void GetWorldRay(out vec3 RayPos,out vec3 RayDir)
-{
-	float Near = 0.01;
-	float Far = FAR_Z;
-	RayPos = ScreenToWorld( uv, Near );
-	RayDir = ScreenToWorld( uv, Far ) - RayPos;
-	
-	//	gr: this is backwards!
-	RayDir = -normalize( RayDir );
-
-	//	mega bodge for webxr views
-	//	but, there's something wrong with when we pan (may be using old broken camera code)
-	if ( RayDir.z < 0.0 )
-	{
-		//RayDir *= -1.0;
-	}
 }
 
 float Range(float Min,float Max,float Value)
