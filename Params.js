@@ -1,30 +1,22 @@
 export const Params = {};
 export default Params;
 
-Params.SquareStep = true;
-Params.DrawColour = true;
-Params.DrawHeight = false;
-Params.DrawStepHeat = false;
-Params.DrawUv = false;
-Params.ApplyAmbientOcclusionColour = true;
-Params.StepHeatMax = 1.0;
-Params.ApplyHeightColour = false;
-Params.AmbientOcclusionMin = 0.31;
-Params.AmbientOcclusionMax = 0.78;
-Params.TextureSampleColourMult = 1.41;
-Params.TextureSampleColourAdd = 0.1;
-Params.BaseColour = [0.91,0.85,0.75];
+Params.SunPositionX = 0;
+Params.SunPositionY = 1;
+Params.SunPositionZ = 0;
+
 Params.BackgroundColour = [0,0,0];
-Params.TerrainHeightScalar = 0.074;
 Params.Fov = 52;
-Params.BrightnessMult = 1.8;
-Params.HeightMapStepBack = 0.57;//0.30;
-Params.MoonSphere = [0,1.6,0.2,0.5];
-Params.DebugClearEyes = false;
+Params.MoonSphere = [0,0.6,0.2,0.5];
 Params.XrToMouseScale = 100;	//	metres to pixels
 
 
 export const ParamsMeta = {};
+
+ParamsMeta.SunPositionX = {min:-10,max:10,step:0.1};
+ParamsMeta.SunPositionY = {min:-10,max:10,step:0.1};
+ParamsMeta.SunPositionZ = {min:-10,max:10,step:0.1};
+
 ParamsMeta.TextureSampleColourMult = {min:0,max:2};
 ParamsMeta.TextureSampleColourAdd = {min:-1,max:1};
 ParamsMeta.AmbientOcclusionMin = {min:0,max:1};

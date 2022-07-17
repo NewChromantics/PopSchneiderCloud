@@ -82,118 +82,12 @@ Pop.CreateColourTexture = function(Colour4)
 	return NewTexture;
 }
 
-/*
-let MoonColourTexture = Pop.CreateColourTexture([0.1,0.8,0.8,1]);
-let MoonDepthTexture = Pop.CreateColourTexture([0,0,0,1]);
-
-async function LoadAssets()
-{
-	//	start loads together
-	const DepthPromise = Pop.LoadFileAsImageAsync(HeightmapFilename);
-	const ColourPromise = Pop.LoadFileAsImageAsync(ColourFilename);
-
-	//	set new textures
-	MoonDepthTexture = await DepthPromise;
-	MoonDepthTexture.SetLinearFilter(true);
-	MoonColourTexture = await ColourPromise;
-	MoonColourTexture.SetLinearFilter(true);
-}
-LoadAssets();
-
-
-	*/
-
-/*
-  negateWindowZoomAndOffset() {
-    const windowZoom =
-        window.outerWidth / document.body.getBoundingClientRect().width;
-    const browserToolbarHeight = window.outerHeight - window.innerHeight;
-    this.domElement.style.width = `${this.domElement.width / windowZoom}px`;
-    this.domElement.style.height = `${this.domElement.height / windowZoom}px`;
-    this.domElement.style.left =
-        `${(window.screen.availLeft - window.screenLeft) / windowZoom}px`;
-    this.domElement.style.top =
-        `${- (window.screenTop + browserToolbarHeight) / windowZoom}px`;
-  }
-*/
-
-/*
-Window.OnRender = function(RenderTarget)
-{
-	try
-	{
-		//	update camera on render
-		MoonApp.Camera.LookAt = Params.MoonSphere.slice();
-		MoonApp.Camera.FovVertical = Params.Fov;
-		Render( RenderTarget, MoonApp.Camera );
-	}
-	catch(e)
-	{
-		console.warn(e);
-	}
-}
-
-function XrToMouseFunc(xyz,Button,Controller)
-{
-	const MouseFunc = this;
-	const x = xyz[0] * Params.XrToMouseScale;
-	const y = xyz[1] * Params.XrToMouseScale;
-	return MouseFunc( x, y, Button );
-}
-
-//	setup xr mode
-async function XrThread(RenderContext)
-{
-	while(true)
-	{
-		function StartCallback(OnClicked)
-		{
-			function OnClick()
-			{
-				OnClicked();
-				Button.SetStyle('visibility','hidden');
-			}
-			const Button = new Pop.Gui.Button('GotoXrButton');
-			Button.SetStyle('visibility','visible');
-			Button.OnClicked = OnClick;
-		}
-		
-		const Device = await Pop.Xr.CreateDevice(RenderContext,StartCallback);
-		Device.OnRender = Render;
-		Device.OnMouseDown = XrToMouseFunc.bind(Window.OnMouseDown);
-		Device.OnMouseMove = XrToMouseFunc.bind(Window.OnMouseMove);
-		Device.OnMouseUp = XrToMouseFunc.bind(Window.OnMouseUp);
-		await Device.WaitForEnd();
-		Pop.Debug(`XR device ended`);
-	}
-}
-
-XrThread(Window).catch(Pop.Debug);
-*/
-
-
 	
 function Render(RenderTarget,Camera)
 {
 	const RenderContext = RenderTarget.GetRenderContext();
 
-	/*
-	if ( !Params.DebugClearEyes )
-	{
-		RenderTarget.ClearColour( ...Params.BackgroundColour );
-	}
-	else if ( Camera.ClearAlpha !== 0 )
-	{
-		if ( Camera.Name == 'left' )
-			RenderTarget.ClearColour( 0,0.5,1 );
-		else if (Camera.Name == 'right')
-			RenderTarget.ClearColour(1, 0, 0);
-		else if (Camera.Name == 'none')
-			RenderTarget.ClearColour(0, 1, 0);
-		else
-			RenderTarget.ClearColour( 1,0,1 );
-	}
-	*/
+
 	let ProjectionViewport = RenderTarget.GetRenderTargetRect();
 	ProjectionViewport[0] = 0;
 	ProjectionViewport[1] = 0; 
@@ -238,25 +132,8 @@ function Render(RenderTarget,Camera)
 
 let QuadGeometry;
 let RaymarchShader;
-let MoonColourTexture;
-let MoonDepthTexture;
-//let MoonColourTexture = Pop.CreateColourTexture([0.1,0.8,0.8,1]);
-//let MoonDepthTexture = Pop.CreateColourTexture([0,0,0,1]);
-/*
-async function LoadAssets()
-{
-	//	start loads together
-	const DepthPromise = Pop.LoadFileAsImageAsync(HeightmapFilename);
-	const ColourPromise = Pop.LoadFileAsImageAsync(ColourFilename);
-
-	//	set new textures
-	MoonDepthTexture = await DepthPromise;
-	MoonDepthTexture.SetLinearFilter(true);
-	MoonColourTexture = await ColourPromise;
-	MoonColourTexture.SetLinearFilter(true);
-}
-LoadAssets();
-*/
+let MoonColourTexture = Pop.CreateColourTexture([0.1,0.8,0.8,1]);
+let MoonDepthTexture = Pop.CreateColourTexture([0,0,0,1]);
 
 
 async function LoadAssets(RenderContext)
@@ -273,7 +150,7 @@ async function LoadAssets(RenderContext)
 		const FragSource = await LoadFileAsStringAsync( HeightmapShaderFrag );
 		RaymarchShader = await RenderContext.CreateShader( VertSource, FragSource, HeightmapShaderMacros );
 	}
-	
+	/*
 	if ( !MoonColourTexture )
 	{
 		MoonColourTexture = await LoadFileAsImageAsync(ColourFilename);
@@ -285,6 +162,7 @@ async function LoadAssets(RenderContext)
 		MoonDepthTexture = await LoadFileAsImageAsync(HeightmapFilename);
 		MoonDepthTexture.SetLinearFilter(true);
 	}
+	 */
 }
 
 function GetRenderCommands(Camera,ScreenRect)
