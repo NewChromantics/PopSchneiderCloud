@@ -8,7 +8,7 @@ uniform bool SquareStep;
 uniform vec3 BackgroundColour;
 #define MAX_STEPS		300
 #define FAR_Z			1000.0
-#define MAX_LIGHT_STEPS	200
+#define MAX_LIGHT_STEPS	100
 
 uniform float SunPositionX;
 uniform float SunPositionY;
@@ -30,6 +30,25 @@ uniform sampler2D BlueNoiseTexture;
 uniform sampler2D PerlinWorleyTexture;
 const float goldenRatio = 1.61803398875;
 uniform bool ApplyBlueNoiseOffset;
+uniform bool ApplyDistancePerOpacity;
+uniform bool LightAnyHit;
+
+
+
+//	from https://www.shadertoy.com/view/4djSRW
+//  1 out, 2 in...
+float hash12(vec2 p)
+{
+	vec3 p3  = fract(vec3(p.xyx) * .1031);
+	p3 += dot(p3, p3.yzx + 33.33);
+	return fract((p3.x + p3.y) * p3.z);
+}
+vec3 hash31(float p)
+{
+	vec3 p3 = fract(vec3(p) * vec3(.1031, .1030, .0973));
+	p3 += dot(p3, p3.yzx+33.33);
+	return fract((p3.xxy+p3.yzz)*p3.zyx);
+}
 
 
 struct TRay
@@ -132,6 +151,7 @@ const float detailStrength = 0.35;
 uniform float FixedStepDistancek;
 //#define FIXED_STEP_DISTANCE 0.0110
 #define FIXED_STEP_DISTANCE (FixedStepDistancek/10000.0)
+#define FIXED_LIGHT_STEP_DISTANCE (FIXED_STEP_DISTANCE * (float(MAX_STEPS)/float(MAX_LIGHT_STEPS)))
 
 
 uniform float DistancePerOpacityk;
@@ -140,6 +160,9 @@ uniform float DistancePerOpacityk;
 
 uniform float BounceOffsetDistancek;
 #define BounceOffsetDistance	(BounceOffsetDistancek/10000.0)
+
+uniform float LightScatterk;
+#define LightScatter	(LightScatterk/1000.0)
 
 
 
@@ -274,7 +297,12 @@ float getCloudMap(vec3 p)
 
 bool InsideCloudBounds(vec3 Position)
 {
+	Position *= CLOUD_EXTENT;
+	vec2 uv = 0.5 + 0.5 * (Position.xz/(1.8 * CLOUD_EXTENT));
+	if ( uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0 )
+		return false;
 	return true;
+	
 	float DistanceToMap = DistanceToCloudBounds(Position);
 	if ( DistanceToMap > 0.0 )
 		return false;
@@ -330,9 +358,9 @@ float GetCloudDensity(vec3 p, out float cloudHeight, bool sampleNoise)
 	//return cloud * CloudDensity;
 	
 	// Early exit from empty space
-	if(cloud <= 0.0)
+	if ( cloud <= 0.0 )
 	{
-	  return 0.0;
+		return 0.0;
 	}
 	
 	// Animate details.
@@ -389,6 +417,10 @@ vec3 lightRay(vec3 org, vec3 p, float phaseFunction, float mu, vec3 sunDirection
 
 void GetDistanceToClouds(vec3 RayPosition,vec3 RayDirection,inout float Distance,inout vec4 Colour)
 {
+	//	todo: check bounds here, but we need a distance
+	//if ( !InsideCloudBounds(RayPosition) )
+	//	return;
+
 	//	todo: get a distance to a cloud bounds, so things can nicely step
 	//		as it is, we assume we're always inside cloud
 	//		with alpha, we end up doing a fixed step
@@ -508,37 +540,50 @@ void DistanceToScene(vec3 RayPosition,vec3 RayDirection,inout float Distance,ino
 
 }
 
+vec2 hash23(vec3 p3)
+{
+	p3 = fract(p3 * vec3(.1031, .1030, .0973));
+	p3 += dot(p3, p3.yzx+33.33);
+	return fract((p3.xx+p3.yz)*p3.zy);
+}
+
+float GetBlueNoise(vec3 RayDir)
+{
+	vec2 Sample = hash23(RayDir);
+	//vec2 Sample = fract(RayDir.xy*0.7777);
+	float blueNoise = texture2D(BlueNoiseTexture,Sample).x;
+	blueNoise = fract(blueNoise + 0.0 * goldenRatio);
+	return blueNoise;
+}
+
+
 float GetNoisyRayOffset(vec3 RayDir)
 {
-	//	add noise to the ray start (this is needed whilst fixed stepping)
-	//	so maybe it needs to be only when entering an alpha area
-	//float blueNoise = texture2D(BlueNoiseTexture,fract(uv*1.0)).x;
-	float blueNoise = texture2D(BlueNoiseTexture,fract(RayDir.xy*0.7777)).x;
-	// Blue noise texture is blue in space but animating it leads to white noise in time.
-	// Adding golden ratio to a number yields a low discrepancy sequence (apparently),
-	// making the offset of each pixel more blue in time (use fract() for modulo 1).
-	// https://blog.demofox.org/2017/10/31/animating-noise-for-integration-over-time/
-	//float RayOffset = fract(blueNoise + float(iFrame%32) * goldenRatio);
-	float RayOffset = fract(blueNoise + 0.0 * goldenRatio);
+	float BlueNoise = GetBlueNoise(RayDir);
+	float RayOffset = BlueNoise;
 	if ( !ApplyBlueNoiseOffset )
 		RayOffset = 0.0;
 
 	return RayOffset * FIXED_STEP_DISTANCE;
 }
 
-uniform bool LightAnyHit;
 
 //	march toward A light
 //	returns 0-1 of (1-obstruction)
-float GetLightVisibility(vec3 RayStart,vec4 LightSphere)
+float GetLightVisibility(vec3 RayStart,vec4 LightSphere,float LightNoise)
 {
 	const float MinDistance = 0.001;
 	const float CloseEnough = MinDistance;
-	float FixedStepDistance = FIXED_STEP_DISTANCE;
 	const float MaxDistance = FAR_Z;
 	const int MaxSteps = MAX_LIGHT_STEPS;
 
 	vec3 RayDir = normalize(LightSphere.xyz - RayStart);
+	
+	//	apply some randomness to the light vector
+	float Noise = GetBlueNoise(RayDir);
+	vec3 Noise3 = (hash31(Noise) - vec3(0.5)) * vec3(2.0);
+	RayDir += Noise3 * LightNoise;
+	RayDir = normalize(RayDir);
 
 	//	time=distance
 	float RayTime = BounceOffsetDistance;	//	start past surface of where we start
@@ -565,14 +610,18 @@ float GetLightVisibility(vec3 RayStart,vec4 LightSphere)
 				return 1.0-Density;
 		}
 		
-		RayTime += FixedStepDistance;
-		/*
-		//	if we are inside a non-dense thing, do a fixed step
-		if ( SceneDistance < CloseEnough && SceneDensity < 1.0 )
-			RayTime += FixedStepDistance;
+		if ( true )
+		{
+			RayTime += FIXED_LIGHT_STEP_DISTANCE;
+		}
 		else
-			RayTime += SceneDistance;
-		*/
+		{
+			if ( SceneDistance < CloseEnough && SceneDensity < 1.0 )
+				RayTime += FIXED_LIGHT_STEP_DISTANCE;
+			else
+				RayTime += SceneDistance;
+		}
+
 		//	if we hit/inside something, accumulate the density
 		if ( SceneDistance < CloseEnough )
 		{
@@ -616,6 +665,7 @@ void GetSceneLight(TRay Ray,out float FinalHitLight,out vec4 FinalHitPosition)
 	//	how much solid matter have we passed through
 	float RayDensity = 0.0;
 	
+	vec3 LastPosition = Ray.Pos;
 	for ( int s=0;	s<MaxSteps;	s++ )
 	{
 		vec3 Position = Ray.Pos + (Ray.Dir * RayTime);
@@ -628,11 +678,11 @@ void GetSceneLight(TRay Ray,out float FinalHitLight,out vec4 FinalHitPosition)
 		//	if we're inside something translucent we should scatter/refract the ray
 		//	gr: scatter only for light?
 		if ( SceneDistance < CloseEnough && SceneColour.w < 1.0 )
-		//if ( true )
 			RayTime += FIXED_STEP_DISTANCE;
 		else
 			RayTime += SceneDistance;
-
+		float LastStepDistance = length(Position-LastPosition);
+		
 		//	ray gone too far
 		if ( RayTime > MaxDistance )
 		{
@@ -641,45 +691,20 @@ void GetSceneLight(TRay Ray,out float FinalHitLight,out vec4 FinalHitPosition)
 			return;
 		}
 
-		//	todo: build light
-		if ( SceneDistance < CloseEnough )
-		{
-/*
-			//	gr: we should scale the opacity with the distance we just stepped
-			//		only if we were in the same object before?
-			//	^^ for tweaking, we want opacity at a fixed step amount (eg. density/metre)
-			//	so scale based on some unit
-			//float DistancePerOpacity = 1.0;	//	1 metre is hard to tweak!
-			//float DistancePerOpacity = 0.05;	//	1 metre is hard to tweak!
-			float OpacityPerMetre = SceneColour.w;
-			OpacityPerMetre *= FixedStepDistance / DistancePerOpacity;
-			float SceneOpacityPerMetre = OpacityPerMetre * SceneColour.w;
-			
-			float AdditionalOpacity = min( 1.0, (1.0-RayColour.w) * SceneOpacityPerMetre);
-			RayColour.xyz += SceneColour.xyz * AdditionalOpacity;
-			RayColour.w += AdditionalOpacity;
-			RayColour.w = min( 1.0, RayColour.w );
-
-			//	if not opaque, move a fixed step through whatever object we hit
-			if ( SceneOpacityPerMetre < 1.0 )
-			{
-			//if ( SceneColour.w < 1.0 )
-				//RayTime += FixedStepDistance;// * (1.0-SceneColour.w);
-			}
- */
-		}
 		
-		if ( SceneDistance < CloseEnough && SceneColour.w>0.0)
+		//	this should scale with fixed steps
+		float StepDensity = SceneColour.w;
+		float OpacityPerMetre = StepDensity;
+		//OpacityPerMetre *= LastStepDistance / DistancePerOpacity;
+		OpacityPerMetre *= FIXED_STEP_DISTANCE / DistancePerOpacity;
+		//if ( ApplyDistancePerOpacity )
+		if ( StepDensity < 1.0 )	//	dont apply density scaling if we've just intersected with something
+			StepDensity = OpacityPerMetre;
+		StepDensity = min(1.0,StepDensity);
+		if ( SceneDistance < CloseEnough && StepDensity>0.0)
 		{
-			//	this should scale with fixed steps
-			float StepDensity = SceneColour.w;
-			/*
-			float OpacityPerMetre = StepDensity;
-			OpacityPerMetre *= FIXED_STEP_DISTANCE / DistancePerOpacity;
-			RayDensity += OpacityPerMetre;
-			*/
+			float LightHere = GetLightVisibility( Position, SunSphere, LightScatter );
 			RayDensity += StepDensity;
-			float LightHere = GetLightVisibility( Position, SunSphere );
 			RayLight += LightHere * StepDensity;
 			
 			if ( LightAnyHit )
@@ -697,6 +722,7 @@ void GetSceneLight(TRay Ray,out float FinalHitLight,out vec4 FinalHitPosition)
 			}
 
 		}
+		LastPosition = Position;
 	}
 
 	//	 ran out of steps
