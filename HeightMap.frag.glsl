@@ -6,9 +6,9 @@ uniform mat4 CameraToWorldTransform;
 
 uniform bool SquareStep;
 uniform vec3 BackgroundColour;
-#define MAX_STEPS	380
-#define FAR_Z		1000.0
-#define STEPS_LIGHT	10
+#define MAX_STEPS		300
+#define FAR_Z			1000.0
+#define MAX_LIGHT_STEPS	200
 
 uniform float SunPositionX;
 uniform float SunPositionY;
@@ -91,6 +91,7 @@ vec3 NormalToRedGreen(float Normal)
 }
 
 
+
 void GetDistanceToSphere(vec3 Position,vec4 Sphere,vec4 SphereColour,inout float Distance,inout vec4 Colour)
 {
 	float DistanceToSphere = length(Sphere.xyz - Position) - Sphere.w;
@@ -103,11 +104,6 @@ void GetDistanceToSphere(vec3 Position,vec4 Sphere,vec4 SphereColour,inout float
 	}
 }
 
-//	need to change this to a distance
-bool InsideCloudBounds(vec3 Position)
-{
-	return true;
-}
 #define CLOUD_EXTENT 100.0
 const float cloudStart = 0.0;
 const float cloudEnd = CLOUD_EXTENT;
@@ -123,7 +119,9 @@ const vec3 sigmaA = vec3(0.0);
 const vec3 sigmaE = max(sigmaS + sigmaA, vec3(1e-6));
 
 const float power = 200.0;
-const float densityMultiplier = 0.5;
+
+uniform float CloudDensityk;
+#define CloudDensity (CloudDensityk/1000.0)
 
 const float shapeSize = (CLOUD_EXTENT/100.0)*0.4;
 const float detailSize = (CLOUD_EXTENT/100.0)*0.8;
@@ -131,9 +129,18 @@ const float detailSize = (CLOUD_EXTENT/100.0)*0.8;
 const float shapeStrength = 0.6;
 const float detailStrength = 0.35;
 
-uniform float FixedStepDistance;
-//#define FIXED_STEP_DISTANCE 0.010
-#define FIXED_STEP_DISTANCE (FixedStepDistance/10000.0)
+uniform float FixedStepDistancek;
+//#define FIXED_STEP_DISTANCE 0.0110
+#define FIXED_STEP_DISTANCE (FixedStepDistancek/10000.0)
+
+
+uniform float DistancePerOpacityk;
+#define DistancePerOpacity	(DistancePerOpacityk/1000.0)
+//float DistancePerOpacity = 0.05;
+
+uniform float BounceOffsetDistancek;
+#define BounceOffsetDistance	(BounceOffsetDistancek/10000.0)
+
 
 
 float HenyeyGreenstein(float g, float costh){
@@ -199,6 +206,48 @@ float getPerlinWorleyNoise(vec3 pos)
 	return mix(data.x, data.y, f);
 }
 
+//	positive = distance, negative is a density inside
+float DistanceToCloudBounds(vec3 p)
+{
+	vec4 Colour = vec4(1);
+	float CloudCenterY = 0.5;
+	float CloudBottomY = 0.4;
+	vec4 a = vec4( 0.3, CloudCenterY, 0.0, 0.4 );
+	vec4 b = vec4( 0.9, CloudCenterY, 0.0, 0.6 );
+	vec4 c = vec4( 1.3, CloudCenterY, 0.0, 0.5 );
+
+	float Distance = 999.0;
+	GetDistanceToSphere( p, a, Colour, Distance, Colour );
+	GetDistanceToSphere( p, b, Colour, Distance, Colour );
+	GetDistanceToSphere( p, c, Colour, Distance, Colour );
+
+	//	clip to y>0
+	Distance = max( Distance, CloudBottomY-p.y);
+	
+	
+/*
+	vec2 uv = 0.5 + 0.5 * (p.xz/(1.8 * CLOUD_EXTENT));
+	//return texture(iChannel2, uv).x;
+
+	
+	//	this is generated in https://www.shadertoy.com/view/3sffzj
+	//	its just a general 2D map of cloud existence
+	//vec2 uv = fragCoord/iResolution.xy;
+	uv -= 0.5;
+
+	//Three overlapping circles.
+	uv *= 5.0;
+	float dist = circularOut(max(0.0, 1.0-length(uv)));
+	uv *= 1.2;
+	dist = max(dist, 0.8*circularOut(max(0.0, 1.0-length(uv+0.65))));
+	uv *= 1.3;
+	dist = max(dist, 0.75*circularOut(max(0.0, 1.0-length(uv-0.75))));
+	return dist;
+ */
+	return Distance;
+}
+
+
 float getCloudMap(vec3 p)
 {
 	vec2 uv = 0.5 + 0.5 * (p.xz/(1.8 * CLOUD_EXTENT));
@@ -223,17 +272,38 @@ float getCloudMap(vec3 p)
 	return col.x;
 }
 
+bool InsideCloudBounds(vec3 Position)
+{
+	return true;
+	float DistanceToMap = DistanceToCloudBounds(Position);
+	if ( DistanceToMap > 0.0 )
+		return false;
+	return true;
+}
+
+
 float GetCloudDensity(vec3 p, out float cloudHeight, bool sampleNoise)
 {
-	if(!InsideCloudBounds(p))
+	if ( !InsideCloudBounds(p) )
 		return 0.0;
-
+	/*
+	float cloud = DistanceToCloudBounds(p);
+	if ( cloud > 0.0 )
+		return 0.0;
+	//return CloudDensity;
+	//return -cloud*CloudDensity;
+	//cloud = 1.0-cloud;
+	
+	cloud *= -100.0;
+	 */
 	//	everything in here is original source-scale
-	p *= 100.0;
+	p *= CLOUD_EXTENT;
 	
-	
-	cloudHeight = saturate((p.y - cloudStart)/(cloudEnd-cloudStart));
 	float cloud = getCloudMap(p);
+
+
+	cloudHeight = saturate((p.y - cloudStart)/(cloudEnd-cloudStart));
+	//float cloud = DistanceToCloudBounds(p);
 
 	// If there are no clouds, exit early.
 	if(cloud <= 0.0)
@@ -257,7 +327,7 @@ float GetCloudDensity(vec3 p, out float cloudHeight, bool sampleNoise)
 	// Carve away density from cloud based on noise.
 	cloud = saturate(remap(cloud, shapeStrength * (shape), 1.0, 0.0, 1.0));
 
-	return cloud;
+	//return cloud * CloudDensity;
 	
 	// Early exit from empty space
 	if(cloud <= 0.0)
@@ -273,7 +343,7 @@ float GetCloudDensity(vec3 p, out float cloudHeight, bool sampleNoise)
 	
 	// Carve away detail based on the noise
 	cloud = saturate(remap(cloud, detailStrength * (detail), 1.0, 0.0, 1.0));
-	return densityMultiplier * cloud;
+	return cloud * CloudDensity;
 }
 
 // Get the amount of light that reaches a sample point.
@@ -285,14 +355,14 @@ vec3 lightRay(vec3 org, vec3 p, float phaseFunction, float mu, vec3 sunDirection
 	//	this func is to get ray entry & exit for bounds
 	//getCloudIntersection(p, sunDirection, distToStart, lightRayDistance);
 		
-	float stepL = lightRayDistance/float(STEPS_LIGHT);
+	float stepL = lightRayDistance/float(MAX_LIGHT_STEPS);
 
 	float lightRayDensity = 0.0;
 	
 	float cloudHeight = 0.0;
 
 	// Collect total density along light ray.
-	for(int j = 0; j < STEPS_LIGHT; j++)
+	for(int j = 0; j < MAX_LIGHT_STEPS; j++)
 	{
 	
 		bool sampleDetail = true;
@@ -344,6 +414,7 @@ void GetDistanceToClouds(vec3 RayPosition,vec3 RayDirection,inout float Distance
 	vec3 sampleSigmaE = sigmaE * density;
 
 	//	no cloud here, just ignore?
+	if ( false )//gr: we end up stepping past the entire cloud
 	if(density <= 0.0 )
 	{
 		//Colour = vec4(0,0,0,0);
@@ -406,33 +477,43 @@ void GetDistanceToClouds(vec3 RayPosition,vec3 RayDirection,inout float Distance
 	Colour.w = totalTransmittance.x;
 }
 
+
+void GetDistanceToCloudBounds(vec3 RayPosition,vec3 RayDirection,inout float Distance,inout vec4 Colour)
+{
+	float BoundsDist = DistanceToCloudBounds( RayPosition );
+	if ( BoundsDist < Distance )
+	{
+		Distance = BoundsDist;
+		Colour = vec4(0,1,0,1);
+	}
+
+}
+
+void DistanceToSceneDensity(vec3 RayPosition,vec3 RayDirection,inout float Distance,inout float Density)
+{
+	vec4 Colour = vec4(0);
+	GetDistanceToSphere( RayPosition, SunSphere, SunColour, Distance, Colour );
+	GetDistanceToSphere( RayPosition, MoonSphere, MoonColour, Distance, Colour );
+	GetDistanceToClouds( RayPosition, RayDirection, Distance, Colour );
+	Density = Colour.w;
+}
+
+
 void DistanceToScene(vec3 RayPosition,vec3 RayDirection,inout float Distance,inout vec4 Colour)
 {
 	GetDistanceToSphere( RayPosition, SunSphere, SunColour, Distance, Colour );
 	GetDistanceToSphere( RayPosition, MoonSphere, MoonColour, Distance, Colour );
 	GetDistanceToClouds( RayPosition, RayDirection, Distance, Colour );
+	//GetDistanceToCloudBounds( RayPosition, RayDirection, Distance, Colour );
+
 }
 
-uniform float DistancePerOpacityk;
-#define DistancePerOpacity	(DistancePerOpacityk/1000.0)
-//float DistancePerOpacity = 0.05;
-
-//	march scene and get colour
-//	also get position for shadowing
-//	todo: get a bouncing ray for built in refraction
-//	todo: get a normal
-void GetSceneColour(TRay Ray,out vec4 RayMarchColour,out vec4 RayMarchPosition,vec3 BackgroundColour)
+float GetNoisyRayOffset(vec3 RayDir)
 {
-	const float MinDistance = 0.001;
-	const float CloseEnough = MinDistance;
-	const float MinStep = MinDistance;
-	float FixedStepDistance = FIXED_STEP_DISTANCE;
-	const float MaxDistance = FAR_Z;
-	const int MaxSteps = MAX_STEPS;
-
 	//	add noise to the ray start (this is needed whilst fixed stepping)
 	//	so maybe it needs to be only when entering an alpha area
-	float blueNoise = texture2D(BlueNoiseTexture,fract(uv*1.0)).x;
+	//float blueNoise = texture2D(BlueNoiseTexture,fract(uv*1.0)).x;
+	float blueNoise = texture2D(BlueNoiseTexture,fract(RayDir.xy*0.7777)).x;
 	// Blue noise texture is blue in space but animating it leads to white noise in time.
 	// Adding golden ratio to a number yields a low discrepancy sequence (apparently),
 	// making the offset of each pixel more blue in time (use fract() for modulo 1).
@@ -442,17 +523,98 @@ void GetSceneColour(TRay Ray,out vec4 RayMarchColour,out vec4 RayMarchPosition,v
 	if ( !ApplyBlueNoiseOffset )
 		RayOffset = 0.0;
 
-	//	get an initial offset to jump start render
+	return RayOffset * FIXED_STEP_DISTANCE;
+}
+
+uniform bool LightAnyHit;
+
+//	march toward A light
+//	returns 0-1 of (1-obstruction)
+float GetLightVisibility(vec3 RayStart,vec4 LightSphere)
+{
+	const float MinDistance = 0.001;
+	const float CloseEnough = MinDistance;
+	float FixedStepDistance = FIXED_STEP_DISTANCE;
+	const float MaxDistance = FAR_Z;
+	const int MaxSteps = MAX_LIGHT_STEPS;
+
+	vec3 RayDir = normalize(LightSphere.xyz - RayStart);
+
+	//	time=distance
+	float RayTime = BounceOffsetDistance;	//	start past surface of where we start
+	RayTime += GetNoisyRayOffset(RayDir);
+	
+	
+	//	how much thick stuff have we passed through
+	float Density = 0.0;
+	
+	
+	for ( int s=0;	s<MaxSteps;	s++ )
+	{
+		vec3 Position = RayStart + (RayDir * RayTime);
+		
+		float SceneDistance = 999.0;
+		float SceneDensity = 0.0;
+		DistanceToSceneDensity( Position, RayDir, SceneDistance, SceneDensity );
+		
+		//	hit we the light we're aiming for
+		//	gr: should this be part of the scene march?
+		{
+			float DistanceToLight = length(LightSphere.xyz - Position) - LightSphere.w;
+			if ( DistanceToLight < CloseEnough )
+				return 1.0-Density;
+		}
+		
+		RayTime += FixedStepDistance;
+		/*
+		//	if we are inside a non-dense thing, do a fixed step
+		if ( SceneDistance < CloseEnough && SceneDensity < 1.0 )
+			RayTime += FixedStepDistance;
+		else
+			RayTime += SceneDistance;
+		*/
+		//	if we hit/inside something, accumulate the density
+		if ( SceneDistance < CloseEnough )
+		{
+			Density += SceneDensity;
+		}
+
+		//	ray gone too far
+		if ( RayTime > MaxDistance )
+			return 1.0 - Density;
+		
+		//	light is blocked
+		if ( Density >= 1.0 )
+			return 1.0 - Density;
+	}
+	
+	//	never hit the light
+	return 0.0;
+	return 1.0 - Density;
+}
+
+
+
+
+
+
+//	simplifying down to just accumulate light
+void GetSceneLight(TRay Ray,out float FinalHitLight,out vec4 FinalHitPosition)
+{
+	const float MinDistance = 0.01;
+	const float CloseEnough = MinDistance;
+	const float MaxDistance = FAR_Z;
+	const int MaxSteps = MAX_STEPS;
+
+
+	//	time=distance
 	float RayTime = 0.0;
-	vec4 DummyColour;
-	DistanceToScene( Ray.Pos, Ray.Dir, RayTime, DummyColour );
-	
-	
-	RayTime += RayOffset;
-	vec4 RayColour = vec4(BackgroundColour,0);
-	
-	//	inverse opacity, how much light gets through (demo +=bg*transmit)
-	vec3 TotalTransmittance = vec3(1.0);
+	RayTime += GetNoisyRayOffset(Ray.Dir);
+
+	//	the amount of light we've accumulated
+	float RayLight = 0.0;
+	//	how much solid matter have we passed through
+	float RayDensity = 0.0;
 	
 	for ( int s=0;	s<MaxSteps;	s++ )
 	{
@@ -462,21 +624,27 @@ void GetSceneColour(TRay Ray,out vec4 RayMarchColour,out vec4 RayMarchPosition,v
 		vec4 SceneColour = vec4(1,0,1,0);
 		DistanceToScene( Position, Ray.Dir, SceneDistance, SceneColour );
 		
-		//RayTime += max( SceneDistance, MinStep );
-		//RayTime += SceneDistance;
-		RayTime+=FixedStepDistance;
+		//	inside something translucent, do fixed step
+		//	if we're inside something translucent we should scatter/refract the ray
+		//	gr: scatter only for light?
+		if ( SceneDistance < CloseEnough && SceneColour.w < 1.0 )
+		//if ( true )
+			RayTime += FIXED_STEP_DISTANCE;
+		else
+			RayTime += SceneDistance;
 
 		//	ray gone too far
-		if (RayTime > MaxDistance)
+		if ( RayTime > MaxDistance )
 		{
-			RayMarchPosition = vec4(Position,0);
-			RayMarchColour = RayColour;
+			FinalHitPosition = vec4(Position,1);
+			FinalHitLight = RayLight;
 			return;
 		}
-		
-		//	absorb colour (only if we hit?
+
+		//	todo: build light
 		if ( SceneDistance < CloseEnough )
 		{
+/*
 			//	gr: we should scale the opacity with the distance we just stepped
 			//		only if we were in the same object before?
 			//	^^ for tweaking, we want opacity at a fixed step amount (eg. density/metre)
@@ -498,38 +666,63 @@ void GetSceneColour(TRay Ray,out vec4 RayMarchColour,out vec4 RayMarchPosition,v
 			//if ( SceneColour.w < 1.0 )
 				//RayTime += FixedStepDistance;// * (1.0-SceneColour.w);
 			}
+ */
 		}
 		
-		if ( SceneDistance < CloseEnough )
+		if ( SceneDistance < CloseEnough && SceneColour.w>0.0)
 		{
-			//	todo: if not opaque, need to continue and keep absorbing colour
-			//	todo: bounce/refract ray here (2nd pass? we may also want to noisily pass throgh stuff)
-			//		N passes? each combining? (then we can do cloud light as well as other stuff in the same way)
-			if ( RayColour.w >= 1.0 )
+			//	this should scale with fixed steps
+			float StepDensity = SceneColour.w;
+			/*
+			float OpacityPerMetre = StepDensity;
+			OpacityPerMetre *= FIXED_STEP_DISTANCE / DistancePerOpacity;
+			RayDensity += OpacityPerMetre;
+			*/
+			RayDensity += StepDensity;
+			float LightHere = GetLightVisibility( Position, SunSphere );
+			RayLight += LightHere * StepDensity;
+			
+			if ( LightAnyHit )
+				RayLight += 1.0;	//	make all steps hit
+
+			//	only stop if the thing we hit is opaque
+			//	gr: do we stop if the density has hit 1?
+			//if ( SceneColour.w >= 1.0 )
+			if ( RayDensity >= 1.0 )
 			{
-				RayMarchPosition = vec4(Position,1);
-				RayMarchColour = RayColour;
+				//	visualise
+				FinalHitPosition = vec4(Position,1);
+				FinalHitLight = RayLight;
 				return;
 			}
-		}
-		
-		//	ray gone too far
-		if (RayTime > MaxDistance)
-		{
-			RayMarchPosition = vec4(Position,0);
-			RayMarchColour = RayColour;
-			return;
+
 		}
 	}
 
 	//	 ran out of steps
 	{
 		vec3 Position = Ray.Pos + Ray.Dir * RayTime;
-		RayMarchPosition = vec4(Position,0);
+		FinalHitPosition = vec4(Position,1);
 	}
-	RayMarchColour = RayColour;
+	FinalHitLight = RayLight;
 }
 
+
+void GetSceneColour(TRay Ray,out vec4 RayColour,out vec4 HitPosition)
+{
+	//	for now just visualise the light
+	float Light = 0.0;
+	GetSceneLight( Ray, Light, HitPosition );
+
+	if ( HitPosition.w == 0.0 )
+	{
+		RayColour = vec4(0,0,1,1);
+		return;
+	}
+
+	RayColour.xyz = vec3(Light);
+	RayColour.w = 1.0;
+}
 
 
 void main()
@@ -542,7 +735,7 @@ void main()
 
 	vec4 SceneColour;
 	vec4 ScenePosition;
-	GetSceneColour( Ray, SceneColour, ScenePosition, vec3(0) );
+	GetSceneColour( Ray, SceneColour, ScenePosition );
 
 	//	miss gr: this include inside cloud
 	/*

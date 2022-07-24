@@ -224,8 +224,9 @@ async function ScreenRenderLoop()
 	let RenderView = new Pop.Gui.RenderView(null,'RenderCanvas');
 	let RenderContext = new Pop.Opengl.Context(RenderView);
 	let Camera = new Camera_t();
-	Camera.LookAt = Params.MoonSphere.slice();
-	Camera.Position = [0,1.8, Params.MoonSphere[2]+Params.MoonSphere[3]*6 ];
+	//Camera.LookAt = Params.MoonSphere.slice();
+	Camera.LookAt = [0,0.6,0];
+	Camera.Position = [0,1.8,4];
 
 	InitCameraControls(RenderView,Camera);
 

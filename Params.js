@@ -5,18 +5,21 @@ class Params_t
 export const Params = new Params_t();
 export default Params;
 
-Params.DistancePerOpacityk = 0.05*1000;
+Params.LightAnyHit = false;
+Params.CloudDensityk = 0.5 * 1000;
+Params.DistancePerOpacityk = 0.05*10000;
+Params.BounceOffsetDistancek = 0.01*10000;
 Params.ApplyBlueNoiseOffset = false;
 Params.SunPositionX = 0;
 Params.SunPositionY = 1;
 Params.SunPositionZ = -2;
-Params.FixedStepDistance = 0.020*10000;
+Params.FixedStepDistancek = 0.020*10000;
 Params.BackgroundColour = [1,1,1];
 Params.Fov = 52;
 Params.MoonPositionX = 0;
-Params.MoonPositionY = 0.6;
+Params.MoonPositionY = 30.6;
 Params.MoonPositionZ = -0.2;
-Params.MoonRadius = 0.5;
+Params.MoonRadius = 0.3;
 Params.XrToMouseScale = 100;	//	metres to pixels
 
 export const ParamsMeta = {};
@@ -27,9 +30,11 @@ ParamsMeta.SunPositionZ = {min:-10,max:10,step:0.1};
 ParamsMeta.MoonPositionX = {min:-10,max:10,step:0.1};
 ParamsMeta.MoonPositionY = {min:-10,max:10,step:0.1};
 ParamsMeta.MoonPositionZ = {min:-10,max:10,step:0.1};
-ParamsMeta.MoonRadius = {min:0,max:10,step:0.1};
-ParamsMeta.FixedStepDistance = {min:1,max:1000,step:0.01};
+ParamsMeta.MoonRadius = {min:0,max:2,step:0.1};
+ParamsMeta.FixedStepDistancek = {min:1,max:1000,step:0.01};
 ParamsMeta.DistancePerOpacityk = {min:1,max:100,step:0.01};
+ParamsMeta.BounceOffsetDistancek = {min:1,max:1000,step:0.01};
+ParamsMeta.CloudDensityk = {min:0,max:1000,step:0.01};
 
 
 ParamsMeta.TextureSampleColourMult = {min:0,max:2};
