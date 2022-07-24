@@ -13,7 +13,9 @@ uniform vec3 BackgroundColour;
 uniform float SunPositionX;
 uniform float SunPositionY;
 uniform float SunPositionZ;
-const float SunRadius = 0.1;
+//const float SunRadius = 0.1;
+uniform float SunRadiusk;
+#define SunRadius	(SunRadiusk/1000.0)
 #define SunPosition	vec3(SunPositionX,SunPositionY,SunPositionZ)
 #define SunSphere	vec4(SunPosition,SunRadius)
 const vec4 SunColour = vec4(1,0.9,0.3,1);
@@ -164,7 +166,8 @@ uniform float BounceOffsetDistancek;
 uniform float LightScatterk;
 #define LightScatter	(LightScatterk/1000.0)
 
-
+uniform float MinAtmosphereCloudk;
+#define MinAtmosphereCloud	(MinAtmosphereCloudk/100000.0)
 
 float HenyeyGreenstein(float g, float costh){
 	return (1.0 / (4.0 * 3.1415))  * ((1.0 - g * g) / pow(1.0 + g*g - 2.0*g*costh, 1.5));
@@ -290,9 +293,9 @@ float getCloudMap(vec3 p)
 	uv *= 1.3;
 	dist = max(dist, 0.75*circularOut(max(0.0, 1.0-length(uv-0.75))));
 
-	vec3 col = vec3(dist);
+	//return 1.0;
 	
-	return col.x;
+	return dist;
 }
 
 bool InsideCloudBounds(vec3 Position)
@@ -537,7 +540,6 @@ void DistanceToScene(vec3 RayPosition,vec3 RayDirection,inout float Distance,ino
 	GetDistanceToSphere( RayPosition, MoonSphere, MoonColour, Distance, Colour );
 	GetDistanceToClouds( RayPosition, RayDirection, Distance, Colour );
 	//GetDistanceToCloudBounds( RayPosition, RayDirection, Distance, Colour );
-
 }
 
 vec2 hash23(vec3 p3)
@@ -697,15 +699,21 @@ void GetSceneLight(TRay Ray,out float FinalHitLight,out vec4 FinalHitPosition)
 		float OpacityPerMetre = StepDensity;
 		//OpacityPerMetre *= LastStepDistance / DistancePerOpacity;
 		OpacityPerMetre *= FIXED_STEP_DISTANCE / DistancePerOpacity;
-		//if ( ApplyDistancePerOpacity )
-		if ( StepDensity < 1.0 )	//	dont apply density scaling if we've just intersected with something
-			StepDensity = OpacityPerMetre;
+		if ( ApplyDistancePerOpacity )
+			if ( StepDensity < 1.0 )	//	dont apply density scaling if we've just intersected with something
+				StepDensity = OpacityPerMetre;
 		StepDensity = min(1.0,StepDensity);
+		//StepDensity = max( MinAtmosphereCloud, StepDensity );
 		if ( SceneDistance < CloseEnough && StepDensity>0.0)
 		{
 			float LightHere = GetLightVisibility( Position, SunSphere, LightScatter );
+			
+			StepDensity = max( MinAtmosphereCloud, StepDensity );
+			
 			RayDensity += StepDensity;
 			RayLight += LightHere * StepDensity;
+			
+			//RayLight += 1.0 * MinAtmosphereCloud;
 			
 			if ( LightAnyHit )
 				RayLight += 1.0;	//	make all steps hit
@@ -721,6 +729,12 @@ void GetSceneLight(TRay Ray,out float FinalHitLight,out vec4 FinalHitPosition)
 				return;
 			}
 
+		}
+		else
+		{
+			//	general atmosphere ambience
+			float LightHere = 1.0;
+			RayLight += LightHere * MinAtmosphereCloud;
 		}
 		LastPosition = Position;
 	}
